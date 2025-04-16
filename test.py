@@ -8,7 +8,7 @@ from model import *
 from torch.utils.data import DataLoader
 # Path
 Dataset_Path = "./Dataset/"
-Model_Path = "Model/ASAE_clean_Test60/model/"
+Model_Path = "Model/example_model.pkl"
 
 
 
@@ -24,10 +24,10 @@ def evaluate(model, data_loader):
     for data in data_loader:
         with torch.no_grad():
             sequence_names, _, labels, node_features, G_batch, edge, pos, edge_feat = data
-            edge = edge.cuda()
-            node_features = node_features.cuda().float().squeeze()
-            pos = pos.cuda()
-            y_true = labels.cuda()
+            edge = edge.to(device)
+            node_features = node_features.to(device).float().squeeze()
+            pos = pos.to(device)
+            y_true = labels.to(device)
             y_true = torch.squeeze(y_true)
             y_true = y_true.long()
             y_pred = model(node_features, pos, edge)
@@ -83,28 +83,22 @@ def analysis(y_true, y_pred, best_threshold = None):
 
 def test(test_dataframe, psepos_path):
     test_loader = DataLoader(dataset=ProDataset(dataframe=test_dataframe,psepos_path=psepos_path), batch_size=BATCH_SIZE, shuffle=True, num_workers=2, collate_fn=graph_collate)
-
-    for model_name in sorted(os.listdir(Model_Path)):
-        print(model_name)
-        model = ASCEPPIS(LAYER,INPUT_DIM, HIDDEN_DIM, NUM_CLASSES)
-
-        if torch.cuda.is_available():
-            model.cuda()
-        model.load_state_dict(torch.load(Model_Path + model_name, map_location='cuda:0'))
-
-        epoch_loss_test_avg, test_true, test_pred, pred_dict = evaluate(model, test_loader)
-        result_test = analysis(test_true, test_pred)
-
-        print("========== Evaluate Test set ==========")
-        print("Test loss: ", epoch_loss_test_avg)
-        print("Test binary acc: ", result_test['binary_acc'])
-        print("Test precision:", result_test['precision'])
-        print("Test recall: ", result_test['recall'])
-        print("Test f1: ", result_test['f1'])
-        print("Test AUC: ", result_test['AUC'])
-        print("Test AUPRC: ", result_test['AUPRC'])
-        print("Test mcc: ", result_test['mcc'])
-        print("Threshold: ", result_test['threshold'])
+    model = ASCEPPIS(LAYER,INPUT_DIM, HIDDEN_DIM, NUM_CLASSES)
+    if torch.cuda.is_available():
+        model.cuda()
+    model.load_state_dict(torch.load(Model_Path, map_location='cuda:0'))
+    epoch_loss_test_avg, test_true, test_pred, pred_dict = evaluate(model, test_loader)
+    result_test = analysis(test_true, test_pred)
+    print("========== Evaluate Test set ==========")
+    print("Test loss: ", epoch_loss_test_avg)
+    print("Test binary acc: ", result_test['binary_acc'])
+    print("Test precision:", result_test['precision'])
+    print("Test recall: ", result_test['recall'])
+    print("Test f1: ", result_test['f1'])
+    print("Test AUC: ", result_test['AUC'])
+    print("Test AUPRC: ", result_test['AUPRC'])
+    print("Test mcc: ", result_test['mcc'])
+    print("Threshold: ", result_test['threshold'])
 
 
 def test_one_dataset(dataset, psepos_path):
