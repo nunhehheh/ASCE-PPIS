@@ -1,0 +1,219 @@
+import sys
+import time
+import os
+import pandas as pd
+from torch.utils.data import DataLoader
+from sklearn import metrics
+from dataload import *
+from model import *
+import networkx as nx
+
+Dataset_Path = "./Dataset/"
+Model_Path = "./Model/"
+Log_path = "./Log/"
+model_time = None
+Test60_psepos_Path = './Feature/psepos/Test60_psepos_SC.pkl'
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+def train_one_epoch(model, data_loader):
+    epoch_loss_train = 0.0
+    n = 0
+    for data in data_loader:
+        model.optimizer.zero_grad()
+        sequence_names, _, labels, node_features, G_batch, edge,pos,edge_feat= data
+        edge = edge.to(device)
+        node_features = node_features.to(device).float().squeeze()
+        pos = pos.to(device)
+        y_true = labels.to(device)
+        y_true = torch.squeeze(y_true)
+        y_true = y_true.long()
+        y_pred = model(node_features, pos, edge)
+        loss = model.criterion(y_pred, y_true)
+        loss.backward()
+        model.optimizer.step()
+        epoch_loss_train += loss.item()
+        n += 1
+    epoch_loss_train_avg = epoch_loss_train / n
+    return epoch_loss_train_avg
+
+def evaluate(model, data_loader):
+    model.eval()
+    epoch_loss = 0.0
+    n = 0
+    valid_pred = []
+    valid_true = []
+    pred_dict = {}
+
+    for data in data_loader:
+        with torch.no_grad():
+            sequence_names, _, labels, node_features, G_batch, edge, pos, edge_feat = data
+            edge = edge.to(device)
+            node_features = node_features.to(device).float().squeeze()
+            pos = pos.to(device)
+            y_true = labels.to(device)
+            y_true = torch.squeeze(y_true)
+            y_true = y_true.long()
+            y_pred = model(node_features, pos,edge)
+            loss = model.criterion(y_pred, y_true)
+            softmax = torch.nn.Softmax(dim=1)
+            y_pred = softmax(y_pred)
+            y_pred = y_pred.cpu().detach().numpy()
+            y_true = y_true.cpu().detach().numpy()
+            valid_pred += [pred[1] for pred in y_pred]
+            valid_true += list(y_true)
+            pred_dict[sequence_names[0]] = [pred[1] for pred in y_pred]
+            epoch_loss += loss.item()
+            n += 1
+    epoch_loss_avg = epoch_loss / n
+
+    return epoch_loss_avg, valid_true, valid_pred, pred_dict
+
+def analysis(y_true, y_pred, best_threshold = None):
+    if best_threshold == None:
+        best_f1 = 0
+        best_threshold = 0
+        for threshold in range(0, 100):
+            threshold = threshold / 100
+            binary_pred = [1 if pred >= threshold else 0 for pred in y_pred]
+            binary_true = y_true
+
+            f1 = metrics.f1_score(binary_true, binary_pred)
+            if f1 > best_f1:
+                best_f1 = f1
+                best_threshold = threshold
+
+    binary_pred = [1 if pred >= best_threshold else 0 for pred in y_pred]
+    binary_true = y_true
+    # binary evaluate
+    binary_acc = metrics.accuracy_score(binary_true, binary_pred)
+    precision = metrics.precision_score(binary_true, binary_pred)
+
+    recall = metrics.recall_score(binary_true, binary_pred)
+    f1 = metrics.f1_score(binary_true, binary_pred)
+    AUC = metrics.roc_auc_score(binary_true, y_pred)
+    precisions, recalls, thresholds = metrics.precision_recall_curve(binary_true, y_pred)
+    AUPRC = metrics.auc(recalls, precisions)
+    mcc = metrics.matthews_corrcoef(binary_true, binary_pred)
+    results = {
+        'binary_acc': binary_acc,
+        'precision': precision,
+        'recall': recall,
+        'f1': f1,
+        'AUC': AUC,
+        'AUPRC': AUPRC,
+        'mcc': mcc,
+        'threshold': best_threshold
+    }
+    return results
+
+def train(model, train_dataframe, valid_dataframe):
+    train_loader = DataLoader(dataset=ProDataset(train_dataframe), batch_size=BATCH_SIZE, shuffle=True, num_workers=2, collate_fn=graph_collate)
+    valid_loader = DataLoader(dataset=ProDataset(dataframe=valid_dataframe,psepos_path=Test60_psepos_Path), batch_size=BATCH_SIZE, shuffle=True, num_workers=2, collate_fn=graph_collate)
+    best_epoch = 0
+    best_val_auc = 0
+    best_val_aupr = 0
+    print("Random seed:", SEED)
+    print("Map cutoff:", MAP_CUTOFF)
+    print("The parameter of normalizing the distance:", DIST_NORM)
+    print("Feature dim:", INPUT_DIM)
+    print("Hidden dim:", HIDDEN_DIM)
+    print("Layer:", LAYER)
+    print("Dropout:", DROPOUT)
+    print("Learning rate:", LEARNING_RATE)
+    print("Training epochs:", NUMBER_EPOCHS)
+    print("Pooling rate:", p)
+    print()
+    for epoch in range(NUMBER_EPOCHS):
+        print("\n========== Train epoch " + str(epoch + 1) + " ==========")
+        model.train()
+        train_one_epoch(model, train_loader)
+
+        print("========== Evaluate Valid set ==========")
+        epoch_loss_valid_avg, valid_true, valid_pred, _ = evaluate(model, valid_loader)
+        result_valid = analysis(valid_true, valid_pred, 0.5)
+        print("Valid loss: ", epoch_loss_valid_avg)
+        print("Valid binary acc: ", result_valid['binary_acc'])
+        print("Valid precision: ", result_valid['precision'])
+        print("Valid recall: ", result_valid['recall'])
+        print("Valid f1: ", result_valid['f1'])
+        print("Valid AUC: ", result_valid['AUC'])
+        print("Valid AUPRC: ", result_valid['AUPRC'])
+        print("Valid mcc: ", result_valid['mcc'])
+        if best_val_aupr < result_valid['AUPRC']:
+            best_epoch = epoch + 1
+            best_val_auc = result_valid['AUC']
+            best_val_aupr = result_valid['AUPRC']
+            torch.save(model.state_dict(), os.path.join(Model_Path,'best_model.pkl'))
+        model.scheduler.step(result_valid['AUPRC'])
+        print("Best epoch: ", best_epoch)
+    return best_epoch, best_val_auc, best_val_aupr
+
+def main():
+    if not os.path.exists(Log_path): os.makedirs(Log_path)
+    with open(Dataset_Path + "Train_335.pkl", "rb") as f:
+        Train_335 = pickle.load(f)
+        Train_335.pop('2j3rA')  # remove the protein with error sequence in the train dataset
+    IDs, sequences, labels = [], [], []
+    for ID in Train_335:
+        IDs.append(ID)
+        item = Train_335[ID]
+        sequences.append(item[0])
+        labels.append(item[1])
+    train_dic = {"ID": IDs, "sequence": sequences, "label": labels}
+    all_dataframe = pd.DataFrame(train_dic)
+    train_dataframe = all_dataframe
+
+    with open(Dataset_Path + "Test_60.pkl", "rb") as f:
+        Test_60 = pickle.load(f)
+    IDs, sequences, labels = [], [], []
+    for ID in Test_60:
+        IDs.append(ID)
+        item = Test_60[ID]
+        sequences.append(item[0])
+        labels.append(item[1])
+    valid_dic = {"ID": IDs, "sequence": sequences, "label": labels}
+    valid_dataframe = pd.DataFrame(valid_dic)
+    model = ASCEPPIS(LAYER, INPUT_DIM, HIDDEN_DIM, NUM_CLASSES)
+    if torch.cuda.is_available():
+        model.to(device)
+    best_epoch, valid_auc, valid_aupr = train(model, train_dataframe, valid_dataframe)
+
+    print("\n\nBest epoch: ", (best_epoch))
+    print("Best AUC : {:.4f}".format(valid_auc))
+    print("Best AUPR : {:.4f}".format(valid_aupr))
+class Logger(object):
+    def __init__(self, filename="Default.log"):
+        self.terminal = sys.stdout
+        self.log = open(filename, 'ab', buffering=0)
+
+    def write(self, message):
+        self.terminal.write(message)
+        try:
+            self.log.write(message.encode('utf-8'))
+        except ValueError:
+            pass
+
+    def close(self):
+        self.log.close()
+        sys.stdout = self.terminal
+
+    def flush(self):
+        pass
+if __name__ == "__main__":
+
+    if model_time is not None:
+        checkpoint_path = os.path.normpath(Log_path +"/"+ model_time)
+    else:
+        localtime = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
+        checkpoint_path = os.path.normpath(Log_path + "/" + localtime)
+        os.makedirs(checkpoint_path)
+    Model_Path = os.path.normpath(checkpoint_path + '/model')
+    if not os.path.exists(Model_Path): os.makedirs(Model_Path)
+    sys.stdout = Logger(os.path.normpath(checkpoint_path + '/training.log'))
+    main()
+    sys.stdout.log.close()
+
+#       PDLTDQPLPDADHTWYTDGSSLLQRKAGAAVTTETEVIWAKALPAGTSAQRAELIALTQALKMAEGKKLNVYTDSRYAFATAHIHGEEIKNKDEILALLKALFLPKRLSIIHCPHSAEARGNRMADQAARKAAITETPD
+#origin:0001110000000000000000101000000000000000000000011100000000000000000000000011101110111111110000000000000000000001010000000000000000000000000
+#ours:  1011100000000000000000000000000000000000000000000100000000000000000000000001101110111010110000000000000000000001010000000000000000000000000
+#ghgpr: 0010000000011110000000000000000010111111100100010100001000100110001000000011101110110110100000000010000100000000000000000001001100010011001
+#agat:  0000000000011110000000000000000010111111100000000000000000100110111000000001000000000000000000000000000100000000010000000000000000000000000

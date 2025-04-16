@@ -1,0 +1,13 @@
+Random seed: 2024
+Map cutoff: 14
+The parameter of normalizing the distance: 15
+Feature dim: 62
+Hidden dim: 128
+Layer: 8
+Dropout: 0.0
+Learning rate: 0.0005
+Training epochs: 60
+Pooling rate: 0.3
+
+
+========== Train epoch 1 ==========
