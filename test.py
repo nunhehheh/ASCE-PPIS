@@ -10,10 +10,7 @@ from torch.utils.data import DataLoader
 Dataset_Path = "./Dataset/"
 Model_Path = "Model/example_model.pkl"
 
-
-
 def evaluate(model, data_loader):
-
     model.eval()
     epoch_loss = 0.0
     n = 1
@@ -43,7 +40,6 @@ def evaluate(model, data_loader):
             n += 1
     epoch_loss_avg = epoch_loss / n
     return epoch_loss_avg, valid_true, valid_pred, pred_dict
-
 
 def analysis(y_true, y_pred, best_threshold = None):
     if best_threshold == None:
