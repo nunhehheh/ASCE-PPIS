@@ -2,18 +2,19 @@ import sys
 import time
 import os
 import pandas as pd
-from torch.utils.data import DataLoader
+from torch.autograd import Variable
 from sklearn import metrics
+from sklearn.model_selection import KFold
 from dataload import *
 from model import *
-import networkx as nx
 
+# Path
 Dataset_Path = "./Dataset/"
 Model_Path = "./Model/"
 Log_path = "./Log/"
 model_time = None
-Test60_psepos_Path = './Feature/psepos/Test60_psepos_SC.pkl'
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
+
 def train_one_epoch(model, data_loader):
     epoch_loss_train = 0.0
     n = 0
@@ -42,7 +43,6 @@ def evaluate(model, data_loader):
     valid_pred = []
     valid_true = []
     pred_dict = {}
-
     for data in data_loader:
         with torch.no_grad():
             sequence_names, _, labels, node_features, G_batch, edge, pos, edge_feat = data
@@ -64,8 +64,8 @@ def evaluate(model, data_loader):
             epoch_loss += loss.item()
             n += 1
     epoch_loss_avg = epoch_loss / n
-
     return epoch_loss_avg, valid_true, valid_pred, pred_dict
+
 
 def analysis(y_true, y_pred, best_threshold = None):
     if best_threshold == None:
@@ -75,24 +75,24 @@ def analysis(y_true, y_pred, best_threshold = None):
             threshold = threshold / 100
             binary_pred = [1 if pred >= threshold else 0 for pred in y_pred]
             binary_true = y_true
-
-            f1 = metrics.f1_score(binary_true, binary_pred)
+            f1 = metrics.matthews_corrcoef(binary_true, binary_pred)
             if f1 > best_f1:
                 best_f1 = f1
                 best_threshold = threshold
 
     binary_pred = [1 if pred >= best_threshold else 0 for pred in y_pred]
     binary_true = y_true
+
     # binary evaluate
     binary_acc = metrics.accuracy_score(binary_true, binary_pred)
     precision = metrics.precision_score(binary_true, binary_pred)
-
     recall = metrics.recall_score(binary_true, binary_pred)
     f1 = metrics.f1_score(binary_true, binary_pred)
     AUC = metrics.roc_auc_score(binary_true, y_pred)
     precisions, recalls, thresholds = metrics.precision_recall_curve(binary_true, y_pred)
     AUPRC = metrics.auc(recalls, precisions)
     mcc = metrics.matthews_corrcoef(binary_true, binary_pred)
+
     results = {
         'binary_acc': binary_acc,
         'precision': precision,
@@ -105,27 +105,19 @@ def analysis(y_true, y_pred, best_threshold = None):
     }
     return results
 
-def train(model, train_dataframe, valid_dataframe):
+
+def train(model, train_dataframe, valid_dataframe, fold = 0):
     train_loader = DataLoader(dataset=ProDataset(train_dataframe), batch_size=BATCH_SIZE, shuffle=True, num_workers=2, collate_fn=graph_collate)
-    valid_loader = DataLoader(dataset=ProDataset(dataframe=valid_dataframe,psepos_path=Test60_psepos_Path), batch_size=BATCH_SIZE, shuffle=True, num_workers=2, collate_fn=graph_collate)
+    valid_loader = DataLoader(dataset=ProDataset(valid_dataframe), batch_size=BATCH_SIZE, shuffle=True, num_workers=2, collate_fn=graph_collate)
+
     best_epoch = 0
     best_val_auc = 0
     best_val_aupr = 0
-    print("Random seed:", SEED)
-    print("Map cutoff:", MAP_CUTOFF)
-    print("The parameter of normalizing the distance:", DIST_NORM)
-    print("Feature dim:", INPUT_DIM)
-    print("Hidden dim:", HIDDEN_DIM)
-    print("Layer:", LAYER)
-    print("Dropout:", DROPOUT)
-    print("Learning rate:", LEARNING_RATE)
-    print("Training epochs:", NUMBER_EPOCHS)
-    print("Pooling rate:", p)
-    print()
+
     for epoch in range(NUMBER_EPOCHS):
         print("\n========== Train epoch " + str(epoch + 1) + " ==========")
         model.train()
-        train_one_epoch(model, train_loader)
+        epoch_loss_train_avg = train_one_epoch(model, train_loader)
 
         print("========== Evaluate Valid set ==========")
         epoch_loss_valid_avg, valid_true, valid_pred, _ = evaluate(model, valid_loader)
@@ -142,44 +134,70 @@ def train(model, train_dataframe, valid_dataframe):
             best_epoch = epoch + 1
             best_val_auc = result_valid['AUC']
             best_val_aupr = result_valid['AUPRC']
-            torch.save(model.state_dict(), os.path.join(Model_Path,'example_model.pkl'))
+            torch.save(model.state_dict(), os.path.join(Model_Path, 'Fold' + str(fold) + '_best_model.pkl'))
         model.scheduler.step(result_valid['AUPRC'])
         print("Best epoch: ", best_epoch)
     return best_epoch, best_val_auc, best_val_aupr
 
-def main():
-    if not os.path.exists(Log_path): os.makedirs(Log_path)
-    with open(Dataset_Path + "Train_335.pkl", "rb") as f:
-        Train_335 = pickle.load(f)
-        Train_335.pop('2j3rA')  # remove the protein with error sequence in the train dataset
-    IDs, sequences, labels = [], [], []
-    for ID in Train_335:
-        IDs.append(ID)
-        item = Train_335[ID]
-        sequences.append(item[0])
-        labels.append(item[1])
-    train_dic = {"ID": IDs, "sequence": sequences, "label": labels}
-    all_dataframe = pd.DataFrame(train_dic)
-    train_dataframe = all_dataframe
 
-    with open(Dataset_Path + "Test_60.pkl", "rb") as f:
-        Test_60 = pickle.load(f)
-    IDs, sequences, labels = [], [], []
-    for ID in Test_60:
-        IDs.append(ID)
-        item = Test_60[ID]
-        sequences.append(item[0])
-        labels.append(item[1])
-    valid_dic = {"ID": IDs, "sequence": sequences, "label": labels}
-    valid_dataframe = pd.DataFrame(valid_dic)
-    model = ASCEPPIS(LAYER, INPUT_DIM, HIDDEN_DIM, NUM_CLASSES)
+def cross_validation(all_dataframe, fold_number=5):
+    print("Random seed:", SEED)
+    print("Map cutoff:", MAP_CUTOFF)
+    print("The parameter of normalizing the distance:", DIST_NORM)
+    print("Feature dim:", INPUT_DIM)
+    print("Hidden dim:", HIDDEN_DIM)
+    print("Layer:", LAYER)
+    print("Dropout:", DROPOUT)
+    print("Alpha:", ALPHA)
+    print("Lambda:", LAMBDA)
+    print("Learning rate:", LEARNING_RATE)
+    print("Training epochs:", NUMBER_EPOCHS)
+    print()
+
+
+    sequence_names = all_dataframe['ID'].values
+    sequence_labels = all_dataframe['label'].values
+    kfold = KFold(n_splits=fold_number, shuffle=True)
+    fold = 0
+    best_epochs = []
+    valid_aucs = []
+    valid_auprs = []
+
+    for train_index, valid_index in kfold.split(sequence_names, sequence_labels):
+        print("\n\n========== Fold " + str(fold + 1) + " ==========")
+        train_dataframe = all_dataframe.iloc[train_index, :]
+        valid_dataframe = all_dataframe.iloc[valid_index, :]
+        print("Train on", str(train_dataframe.shape[0]), "samples, validate on", str(valid_dataframe.shape[0]),
+              "samples")
+        #in_node_nf, hidden_nf, out_node_nf, in_edge_nf=0, device='cuda', act_fn=nn.SiLU(), n_layers=4, residual=True, attention=False, normalize=True, tanh=False
+        model = ASCEPPIS(LAYER,INPUT_DIM, HIDDEN_DIM, NUM_CLASSES)
+        if torch.cuda.is_available():
+            model.cuda()
+
+        best_epoch, valid_auc, valid_aupr = train(model, train_dataframe, valid_dataframe, fold + 1)
+        best_epochs.append(str(best_epoch))
+        valid_aucs.append(valid_auc)
+        valid_auprs.append(valid_aupr)
+        fold += 1
+
+    print("\n\nBest epoch: " + " ".join(best_epochs))
+    print("Average AUC of {} fold: {:.4f}".format(fold_number, sum(valid_aucs) / fold_number))
+    print("Average AUPR of {} fold: {:.4f}".format(fold_number, sum(valid_auprs) / fold_number))
+    return round(sum([int(epoch) for epoch in best_epochs]) / fold_number)
+
+
+def train_full_model(all_dataframe, aver_epoch):
+    print("\n\nTraining a full model using all training data...\n")
+    model=VNEGNNPPIS(LAYER, INPUT_DIM, HIDDEN_DIM, NUM_CLASSES)
     if torch.cuda.is_available():
-        model.to(device)
-    best_epoch, valid_auc, valid_aupr = train(model, train_dataframe, valid_dataframe)
-
-    print("\n\nBest epoch: ", (best_epoch))
-    print("Best AUC : {:.4f}".format(valid_auc))
-    print("Best AUPR : {:.4f}".format(valid_aupr))
+        model.cuda()
+    train_loader = DataLoader(dataset=ProDataset(all_dataframe), batch_size=BATCH_SIZE, shuffle=True, num_workers=2, collate_fn=graph_collate)
+    for epoch in range(NUMBER_EPOCHS):
+        print("\n========== Train epoch " + str(epoch + 1) + " ==========")
+        model.train()
+        train_one_epoch(model, train_loader)
+        if epoch + 1 in [aver_epoch, 45]:
+            torch.save(model.state_dict(), os.path.join(Model_Path, 'Full_model_{}.pkl'.format(epoch + 1)))
 class Logger(object):
     def __init__(self, filename="Default.log"):
         self.terminal = sys.stdout
@@ -198,6 +216,28 @@ class Logger(object):
 
     def flush(self):
         pass
+
+
+def main():
+    if not os.path.exists(Log_path): os.makedirs(Log_path)
+
+    with open(Dataset_Path + "Train_335.pkl", "rb") as f:
+        Train_335 = pickle.load(f)
+        Train_335.pop('2j3rA')  # remove the protein with error sequence in the train dataset
+
+    IDs, sequences, labels = [], [], []
+
+    for ID in Train_335:
+        IDs.append(ID)
+        item = Train_335[ID]
+        sequences.append(item[0])
+        labels.append(item[1])
+
+    train_dic = {"ID": IDs, "sequence": sequences, "label": labels}
+    train_dataframe = pd.DataFrame(train_dic)
+    aver_epoch = cross_validation(train_dataframe, fold_number=5)
+    train_full_model(train_dataframe, aver_epoch)
+
 if __name__ == "__main__":
 
     if model_time is not None:
@@ -208,7 +248,7 @@ if __name__ == "__main__":
         os.makedirs(checkpoint_path)
     Model_Path = os.path.normpath(checkpoint_path + '/model')
     if not os.path.exists(Model_Path): os.makedirs(Model_Path)
+
     sys.stdout = Logger(os.path.normpath(checkpoint_path + '/training.log'))
     main()
     sys.stdout.log.close()
-

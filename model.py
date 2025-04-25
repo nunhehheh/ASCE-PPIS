@@ -32,7 +32,7 @@ NUM_CLASSES = 2  # [not bind, bind]
 NUMBER_EPOCHS = 60
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-def extract_edge(edges, idx):
+def extract_edge(edges, idx): #extract subgraph by index
     edge_start = edges[0].tolist()
     edge_end = edges[1].tolist()
     idx = idx.tolist()
@@ -44,42 +44,7 @@ def extract_edge(edges, idx):
     edges = [new_edge_start, new_edge_end]
     edge_index = torch.stack(edges, dim=0)
     return edge_index
-def get_virtual_fibonacci_pos(virtual_channels,node_loc):  # node_loc: [N, 3]
-    center = torch.mean(node_loc, dim=0).unsqueeze(0)  # [1, 3]
-    dist = node_loc - center  # [N, 3]
-    dist = torch.norm(dist, dim=1)  # [N]
-    radius = torch.max(dist)  # scalar
-    def fibonacci_sphere(samples=1000):
-        points = []
-        phi = math.pi * (math.sqrt(5.) - 1.)  # golden angle in radians
-        for i in range(samples):
-            y = 1 - (i / float(samples - 1)) * 2  # y goes from 1 to -1
-            y=np.float32(y)
-            radius = math.sqrt(1 - y * y)  # radius at y
-            theta = phi * i  # golden angle increment
-            x = math.cos(theta) * radius
-            z = math.sin(theta) * radius
-            points.append([x, y, z])
-        return points
-    points = fibonacci_sphere(virtual_channels)
-    points = torch.tensor(points,device=device)
-    points = points * radius
-    points = points + center
-    axis = torch.randn(3, device=device)
-    axis = axis / torch.norm(axis)
-    angle = torch.rand(1, device=device) * 2 * math.pi  # Random angle between 0 and 2*pi
-    a = torch.cos(angle)
-    b = torch.sin(angle)
-    c = torch.sin(angle)
-    axis = axis.unsqueeze(1)
-    rotation_matrix = a * torch.eye(3, device=device) + \
-                      b * torch.cross(axis, torch.eye(3, device=device), dim=0) + \
-                      c * torch.mm(axis, axis.t())
 
-    points_centered = points - center
-    points_rotated = torch.mm(points_centered, rotation_matrix.t()) + center
-
-    return points_rotated
 class CoorsNorm(nn.Module):
     """https://github.com/lucidrains/egnn-pytorch"""
 

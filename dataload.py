@@ -5,7 +5,7 @@ import dgl
 import torch
 import numpy as np
 import torch.nn as nn
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset,DataLoader
 import os
 import warnings
 from model import *
@@ -13,19 +13,10 @@ warnings.filterwarnings("ignore")
 
 import esm
 
-
-
-
 # Feature Path
 Feature_Path = "./Feature/"
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-def get_layer(sequence_name):
-    file_name = f"['{sequence_name}']_2.pickle"
-    t_path = os.path.join('SEPN/trees/', file_name)
-    with open(t_path, 'rb') as fp:
-        layer_data = pickle.load(fp)
-    return layer_data
 
 def embedding(sequence_name,sequence):
 
@@ -118,10 +109,14 @@ class ProDataset(Dataset):
         res_atom_features = torch.from_numpy(res_atom_features)
         node_features = torch.cat([node_features, res_atom_features], dim=-1)
         node_features = torch.cat([node_features, torch.sqrt(torch.sum(pos * pos, dim=1)).unsqueeze(-1) / self.dist], dim=-1)
-        # llm_feature = torch.from_numpy(np.load(Feature_Path + "ESM-V1/" + sequence_name + '.npy'))[:-1,:]
-        # norm = llm_feature.norm(p=2, dim=1, keepdim=True)
-        # llm_feature /= norm
-        # node_features = torch.cat([node_features, llm_feature], dim=-1)
+        '''
+            #enable when testing ensemble model
+            llm_feature = torch.from_numpy(np.load(Feature_Path + "ESM-V1/" + sequence_name + '.npy'))[:-1,:]
+            norm = llm_feature.norm(p=2, dim=1, keepdim=True)
+            llm_feature /= norm
+            node_features = torch.cat([node_features, llm_feature], dim=-1)
+        '''
+
         radius_index_list = cal_edges(sequence_name, MAP_CUTOFF)
         edge_feat = self.cal_edge_attr(radius_index_list, pos)
         G = dgl.DGLGraph()
