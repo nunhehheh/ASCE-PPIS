@@ -109,13 +109,13 @@ class ProDataset(Dataset):
         res_atom_features = torch.from_numpy(res_atom_features)
         node_features = torch.cat([node_features, res_atom_features], dim=-1)
         node_features = torch.cat([node_features, torch.sqrt(torch.sum(pos * pos, dim=1)).unsqueeze(-1) / self.dist], dim=-1)
-        '''
-            #enable when testing ensemble model
-            llm_feature = torch.from_numpy(np.load(Feature_Path + "ESM-V1/" + sequence_name + '.npy'))[:-1,:]
-            norm = llm_feature.norm(p=2, dim=1, keepdim=True)
-            llm_feature /= norm
-            node_features = torch.cat([node_features, llm_feature], dim=-1)
-        '''
+
+        #dismiss when testing individual model
+        llm_feature = torch.from_numpy(np.load(Feature_Path + "ESM-V1/" + sequence_name + '.npy'))[:-1,:]
+        norm = llm_feature.norm(p=2, dim=1, keepdim=True)
+        llm_feature /= norm
+        node_features = torch.cat([node_features, llm_feature], dim=-1)
+
 
         radius_index_list = cal_edges(sequence_name, MAP_CUTOFF)
         edge_feat = self.cal_edge_attr(radius_index_list, pos)
