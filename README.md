@@ -1,6 +1,6 @@
 # ASCE-PPIS
 ## 1 Description
-Source code for paperASCE-PPIS:A Protein-Protein Interaction Sites Prediction Method Based on an Equivariant Graph Neural Network with the Fusion of Structure-Aware Pooling and Graph Collapse
+Source code for paper "ASCE-PPIS:A Protein-Protein Interaction Sites Prediction Method Based on an Equivariant Graph Neural Network with the Fusion of Structure-Aware Pooling and Graph Collapse".
 ## 2 System requirements
    ASCE-PPIS is developed with:
   dgl==2.3.0+cu121
