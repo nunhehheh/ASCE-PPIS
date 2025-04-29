@@ -34,7 +34,7 @@ Run the following script to run 5-fold cross-validation.
 ```python
 python train.py 
 ```
-**We also provide pre-trained models at "./Model".Run the following script to test the performance of ASCE-PPIS. </br>
+**We also provide the model in the paper at "./Model".Run the following script to test the performance of ASCE-PPIS. </br>
 ```python
 python Ensemble.py 
 ```
