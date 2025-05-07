@@ -61,11 +61,7 @@ class CoorsNorm(nn.Module):
 
 
 class EGNNLayer(MessagePassing):
-    """E(n)-equivariant Message Passing Layer
-    Is currently not compatible with the Pytorch Geometric HeteroConv class, because are returning here
-    only the updated target nodes features.
-    TODO: Change this to conform with general Pytorch Geometric interface.
-    """
+    """E(n)-equivariant Message Passing Layer"""
 
     def __init__(
         self,
@@ -158,7 +154,6 @@ class EGNNLayer(MessagePassing):
         edge_weight: OptTensor = None,
         edge_attr: OptPairTensor = None,
     ):
-        # TODO: Think about a better solution for the residual connection
         if self.residual:
             residual = x if isinstance(x, Tensor) else x[1]
         x_dest, pos = self.propagate(edge_index, x=x, pos=pos, edge_attr=None, edge_weight=None)
