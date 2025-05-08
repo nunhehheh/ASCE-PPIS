@@ -111,7 +111,7 @@ class ProDataset(Dataset):
         node_features = torch.cat([node_features, torch.sqrt(torch.sum(pos * pos, dim=1)).unsqueeze(-1) / self.dist], dim=-1)
 
         #dismiss when testing individual model
-        llm_feature = torch.from_numpy(np.load(Feature_Path + "ESM-V1/" + sequence_name + '.npy'))[:-1,:]
+        llm_feature = torch.from_numpy(np.load(Feature_Path + "ESM-2/" + sequence_name + '.npy'))[:-1,:]
         norm = llm_feature.norm(p=2, dim=1, keepdim=True)
         llm_feature /= norm
         node_features = torch.cat([node_features, llm_feature], dim=-1)
