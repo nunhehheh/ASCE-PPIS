@@ -148,8 +148,6 @@ def cross_validation(all_dataframe, fold_number=5):
     print("Hidden dim:", HIDDEN_DIM)
     print("Layer:", LAYER)
     print("Dropout:", DROPOUT)
-    print("Alpha:", ALPHA)
-    print("Lambda:", LAMBDA)
     print("Learning rate:", LEARNING_RATE)
     print("Training epochs:", NUMBER_EPOCHS)
     print()
@@ -188,7 +186,7 @@ def cross_validation(all_dataframe, fold_number=5):
 
 def train_full_model(all_dataframe, aver_epoch):
     print("\n\nTraining a full model using all training data...\n")
-    model=VNEGNNPPIS(LAYER, INPUT_DIM, HIDDEN_DIM, NUM_CLASSES)
+    model=ASCEPPIS(LAYER, INPUT_DIM, HIDDEN_DIM, NUM_CLASSES)
     if torch.cuda.is_available():
         model.cuda()
     train_loader = DataLoader(dataset=ProDataset(all_dataframe), batch_size=BATCH_SIZE, shuffle=True, num_workers=2, collate_fn=graph_collate)
