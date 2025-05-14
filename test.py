@@ -8,7 +8,7 @@ from model import *
 from torch.utils.data import DataLoader
 # Path
 Dataset_Path = "./Dataset/"
-Model_Path = "Model/example_model.pkl"
+Model_Path = "Model/handcrafted.pkl"
 
 def evaluate(model, data_loader):
     model.eval()
@@ -110,13 +110,14 @@ def test_one_dataset(dataset, psepos_path):
 
 
 def main():
+
     with open(Dataset_Path + "Test_60.pkl", "rb") as f:
-        Test_60 = pickle.load(f)
+        Testset = pickle.load(f)
 
-    Test60_psepos_Path = './Feature/psepos/Test60_psepos_SC.pkl'
+    Test_psepos_Path = './Feature/psepos/Test60_psepos_SC.pkl'
 
-    print("Evaluate ASCEPPIS on Test_60")
-    test_one_dataset(Test_60, Test60_psepos_Path)
+    print("Evaluate ASCEPPIS")
+    test_one_dataset(Testset, Test_psepos_Path)
 
 if __name__ == "__main__":
     main()

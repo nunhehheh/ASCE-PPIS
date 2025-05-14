@@ -12,14 +12,14 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 from model import ASCEPPIS
 
 Dataset_Path = "./Dataset/"
-Model_Path_hand = "Model/example_model.pkl"
-Model_Path_all = "Model/ASCE_all-features.pkl"
+Model_Path_hand = "Model/handcrafted.pkl"
+Model_Path_all = "Model/all-features.pkl"
 
 def main():
     with open(Dataset_Path + "Test_60.pkl", "rb") as f:
-        Test_60 = pickle.load(f)
-    Test60_psepos_Path = './Feature/psepos/Test60_psepos_SC.pkl'
-    run_one_dataset(Test_60, Test60_psepos_Path)
+        Testset = pickle.load(f)
+    Test_psepos_Path = './Feature/psepos/Test60_psepos_SC.pkl'
+    run_one_dataset(Testset, Test_psepos_Path)
 
 def run_one_dataset(dataset, psepos_path):
     IDs, sequences, labels = [], [], []
